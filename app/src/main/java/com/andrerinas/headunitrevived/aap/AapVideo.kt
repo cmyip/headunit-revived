@@ -20,6 +20,7 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
     private var legacyAssembledBuffer: ByteArray? = null
     private var isFrameCorrupt = false
     private var lastKeyframeRequestMs = 0L
+    private var qdLinkStartLogged = false
 
     private fun markCorruptAndRequestRecovery() {
         if (!isFrameCorrupt) {
@@ -45,6 +46,19 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
     private fun output(buf: ByteArray, offset: Int, size: Int) {
         val mode = settings.videoOutputMode
         if (mode != Settings.VideoOutputMode.LOCAL) {
+            // Do not make QDLink-only output depend on AapService having been
+            // recreated after the preference changed. BOTH commonly has a local
+            // Activity/surface lifecycle that masks this race; QDLINK has no
+            // such local lifecycle. start() is idempotent and guarantees the
+            // discovery/mirror endpoint exists before access units are handed
+            // to it.
+            if (!qdLink.isRunning) {
+                qdLink.start()
+                if (!qdLinkStartLogged) {
+                    qdLinkStartLogged = true
+                    AppLog.i("AapVideo: started QDLink bridge from video forwarding path")
+                }
+            }
             var p = offset
             var config = false
             var key = false

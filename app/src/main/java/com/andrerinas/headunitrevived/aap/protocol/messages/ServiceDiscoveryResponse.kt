@@ -59,7 +59,10 @@ class ServiceDiscoveryResponse(private val context: Context)
                     val hevcAvailableForHighResolution =
                         com.andrerinas.headunitrevived.decoder.VideoDecoder.isHevcReliable() || explicitSoftwareHevc
 
-                    val codecToRequest = when (settings.videoCodec) {
+                    val codecToRequest = when {
+                        settings.videoOutputMode != com.andrerinas.headunitrevived.utils.Settings.VideoOutputMode.LOCAL ->
+                            Media.MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP
+                        else -> when (settings.videoCodec) {
                         "H.265" -> if (hevcAvailableForUserChoice) {
                             Media.MediaCodecType.MEDIA_CODEC_VIDEO_H265
                         } else {
@@ -76,7 +79,8 @@ class ServiceDiscoveryResponse(private val context: Context)
                                 Media.MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP
                             }
                         }
-                        else -> Media.MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP
+                            else -> Media.MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP
+                        }
                     }
 
                     // Use HeadUnitScreenConfig for negotiated resolution and margins

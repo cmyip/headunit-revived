@@ -7,6 +7,7 @@ import com.andrerinas.headunitrevived.connection.CommManager
 import com.andrerinas.headunitrevived.decoder.AudioDecoder
 import com.andrerinas.headunitrevived.decoder.VideoDecoder
 import com.andrerinas.headunitrevived.utils.Settings
+import com.andrerinas.headunitrevived.qdlink.QdLinkBridge
 
 class AppComponent(private val app: App) {
 
@@ -20,4 +21,5 @@ class AppComponent(private val app: App) {
         get() = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
     val commManager = CommManager(app, settings, audioDecoder, videoDecoder)
+    val qdLinkBridge = QdLinkBridge()
 }

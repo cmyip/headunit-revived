@@ -139,7 +139,11 @@ class AapTransport(
     init {
         micRecorder.listener = this
         aapAudio = AapAudio(audioDecoder, audioManager, settings)
-        aapVideo = AapVideo(videoDecoder, settings) {
+        aapVideo = AapVideo(videoDecoder, settings, com.andrerinas.headunitrevived.App.provide(context).qdLinkBridge) {
+            triggerFocusCycleRecovery()
+        }
+
+        com.andrerinas.headunitrevived.App.provide(context).qdLinkBridge.onKeyFrameRequest = {
             triggerFocusCycleRecovery()
         }
 

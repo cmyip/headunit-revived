@@ -4,9 +4,11 @@ import com.andrerinas.headunitrevived.aap.protocol.messages.Messages
 import com.andrerinas.headunitrevived.decoder.VideoDecoder
 import com.andrerinas.headunitrevived.utils.AppLog
 import com.andrerinas.headunitrevived.utils.Settings
+import com.andrerinas.headunitrevived.qdlink.QdLinkBridge
 import java.nio.ByteBuffer
 
-internal class AapVideo(private val videoDecoder: VideoDecoder, private val settings: Settings, private val onFrameCorrupted: () -> Unit) {
+internal class AapVideo(private val videoDecoder: VideoDecoder, private val settings: Settings,
+                        private val qdLink: QdLinkBridge, private val onFrameCorrupted: () -> Unit) {
 
     private val messageBuffer = ByteBuffer.allocate(
         if (settings.videoCodec == VideoDecoder.CodecType.H265.mimeType) {
@@ -40,6 +42,30 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
         return -1
     }
 
+    private fun output(buf: ByteArray, offset: Int, size: Int) {
+        val mode = settings.videoOutputMode
+        if (mode != Settings.VideoOutputMode.LOCAL) {
+            var p = offset
+            var config = false
+            var key = false
+            val end = offset + size
+            while (p + 4 < end) {
+                val sc = findStartCode(buf, p)
+                if (sc > 0) {
+                    when (buf[p + sc].toInt() and 0x1f) {
+                        7, 8 -> config = true
+                        5 -> key = true
+                    }
+                    p += sc
+                } else p++
+            }
+            qdLink.sendAccessUnit(buf, offset, size, config, key)
+        }
+        if (mode != Settings.VideoOutputMode.QDLINK) {
+            videoDecoder.decode(buf, offset, size, settings.forceSoftwareDecoding, settings.videoCodec)
+        }
+    }
+
     fun process(message: AapMessage): Boolean {
 
         val flags = message.flags.toInt()
@@ -55,14 +81,14 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
                 // Timestamp Indication (Offset 10)
                 val sc10 = findStartCode(buf, 10)
                 if (len > 10 + sc10 && sc10 > 0) {
-                    videoDecoder.decode(buf, 10, len - 10, settings.forceSoftwareDecoding, settings.videoCodec)
+                    output(buf, 10, len - 10)
                     return true
                 }
 
                 // Media Indication or Config (Offset 2)
                 val sc2 = findStartCode(buf, 2)
                 if (len > 2 + sc2 && sc2 > 0) {
-                    videoDecoder.decode(buf, 2, len - 2, settings.forceSoftwareDecoding, settings.videoCodec)
+                    output(buf, 2, len - 2)
                     return true
                 }
                 AppLog.w("AapVideo: Dropped Flag 11 packet. len=$len")
@@ -119,9 +145,9 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
                         legacyAssembledBuffer = ByteArray(assembledSize + 1024)
                     }
                     messageBuffer.get(legacyAssembledBuffer!!, 0, assembledSize)
-                    videoDecoder.decode(legacyAssembledBuffer!!, 0, assembledSize, settings.forceSoftwareDecoding, settings.videoCodec)
+                    output(legacyAssembledBuffer!!, 0, assembledSize)
                 } else {
-                    videoDecoder.decode(messageBuffer.array(), 0, assembledSize, settings.forceSoftwareDecoding, settings.videoCodec)
+                    output(messageBuffer.array(), 0, assembledSize)
                 }
 
                 messageBuffer.clear()

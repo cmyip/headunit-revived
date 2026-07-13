@@ -68,6 +68,7 @@ class SettingsFragment : Fragment() {
     private var pendingForceSoftware: Boolean? = null
     private var pendingSoftwareVideoDecoder: Settings.SoftwareVideoDecoder? = null
     private var pendingVideoCodec: String? = null
+    private var pendingVideoOutputMode: Settings.VideoOutputMode? = null
     private var pendingFpsLimit: Int? = null
     private var pendingBluetoothAddress: String? = null
     private var pendingEnableAudioSink: Boolean? = null
@@ -169,6 +170,7 @@ class SettingsFragment : Fragment() {
         pendingForceSoftware = settings.forceSoftwareDecoding
         pendingSoftwareVideoDecoder = settings.softwareVideoDecoder
         pendingVideoCodec = settings.videoCodec
+        pendingVideoOutputMode = settings.videoOutputMode
         pendingFpsLimit = settings.fpsLimit
         pendingBluetoothAddress = settings.bluetoothAddress
         pendingEnableAudioSink = settings.enableAudioSink
@@ -253,6 +255,7 @@ class SettingsFragment : Fragment() {
         pendingForceSoftware = settings.forceSoftwareDecoding
         pendingSoftwareVideoDecoder = settings.softwareVideoDecoder
         pendingVideoCodec = settings.videoCodec
+        pendingVideoOutputMode = settings.videoOutputMode
         pendingFpsLimit = settings.fpsLimit
         pendingBluetoothAddress = settings.bluetoothAddress
         pendingEnableAudioSink = settings.enableAudioSink
@@ -361,6 +364,7 @@ class SettingsFragment : Fragment() {
         pendingForceSoftware?.let { settings.forceSoftwareDecoding = it }
         pendingSoftwareVideoDecoder?.let { settings.softwareVideoDecoder = it }
         pendingVideoCodec?.let { settings.videoCodec = it }
+        pendingVideoOutputMode?.let { settings.videoOutputMode = it }
         pendingFpsLimit?.let { settings.fpsLimit = it }
         pendingBluetoothAddress?.let { settings.bluetoothAddress = it }
         pendingEnableAudioSink?.let { settings.enableAudioSink = it }
@@ -454,6 +458,7 @@ class SettingsFragment : Fragment() {
                         pendingForceSoftware != settings.forceSoftwareDecoding ||
                         pendingSoftwareVideoDecoder != settings.softwareVideoDecoder ||
                         pendingVideoCodec != settings.videoCodec ||
+                        pendingVideoOutputMode != settings.videoOutputMode ||
                         pendingFpsLimit != settings.fpsLimit ||
                         pendingBluetoothAddress != settings.bluetoothAddress ||
                         pendingEnableAudioSink != settings.enableAudioSink ||
@@ -491,6 +496,7 @@ class SettingsFragment : Fragment() {
         // Check for restart requirement
         requiresRestart = pendingResolution != settings.resolutionId ||
                           pendingVideoCodec != settings.videoCodec ||
+                          pendingVideoOutputMode != settings.videoOutputMode ||
                           pendingFpsLimit != settings.fpsLimit ||
                             pendingDpi != settings.dpiPixelDensity ||
             pendingStaticBSSID != settings.staticBSSID ||
@@ -1135,6 +1141,28 @@ class SettingsFragment : Fragment() {
                         updateSettingsList()
                     }
                     .show()
+            }
+        ))
+
+        items.add(SettingItem.SettingEntry(
+            stableId = "videoOutputMode",
+            nameResId = R.string.video_output_mode,
+            value = when (pendingVideoOutputMode) {
+                Settings.VideoOutputMode.QDLINK -> "QDLink"
+                Settings.VideoOutputMode.BOTH -> "Local + QDLink"
+                else -> "Local"
+            },
+            onClick = { _ ->
+                val labels = arrayOf("Local", "QDLink", "Local + QDLink")
+                val values = Settings.VideoOutputMode.values()
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.video_output_mode)
+                    .setSingleChoiceItems(labels, values.indexOf(pendingVideoOutputMode).coerceAtLeast(0)) { dialog, which ->
+                        pendingVideoOutputMode = values[which]
+                        checkChanges()
+                        dialog.dismiss()
+                        updateSettingsList()
+                    }.show()
             }
         ))
 

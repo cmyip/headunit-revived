@@ -13,6 +13,8 @@ import com.andrerinas.headunitrevived.connection.UsbDeviceCompat
 
 class Settings(private val context: Context) {
 
+    enum class VideoOutputMode { LOCAL, QDLINK, BOTH }
+
     private val _prefs: SharedPreferences? by lazy {
         try {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -341,6 +343,12 @@ class Settings(private val context: Context) {
     var videoCodec: String
         get() = prefs.getString("video-codec", "Auto")!!
         set(value) { prefs.edit().putString("video-codec", value).apply() }
+
+    var videoOutputMode: VideoOutputMode
+        get() = try {
+            VideoOutputMode.valueOf(prefs.getString("video-output-mode", VideoOutputMode.LOCAL.name)!!)
+        } catch (_: IllegalArgumentException) { VideoOutputMode.LOCAL }
+        set(value) { prefs.edit().putString("video-output-mode", value.name).apply() }
 
     var fpsLimit: Int
         get() = prefs.getInt("fps-limit", 60)

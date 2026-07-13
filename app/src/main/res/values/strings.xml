@@ -245,6 +245,7 @@
     <string name="move_down">Move down</string>
     <string name="auto_connecting_single_usb">Auto-connecting to USB device…</string>
     <string name="video_codec">Video Codec</string>
+    <string name="video_output_mode">Video Output</string>
     <string name="fps_limit">FPS Limit</string>
     <string name="save">Save</string>
     <string name="save_and_restart">Save (Reconnect needed)</string>

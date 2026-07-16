@@ -31,6 +31,7 @@ class QdLinkBridge(private val context: Context) {
     @Volatile private var fps = 30
     @Volatile private var bitRate = 5_080_320
     @Volatile private var interval = 3
+    @Volatile private var negotiatedOrientation = P.ORIENTATION_LANDSCAPE
     @Volatile private var config: ByteArray? = null
     @Volatile private var sps: ByteArray? = null
     @Volatile private var pps: ByteArray? = null
@@ -257,6 +258,26 @@ class QdLinkBridge(private val context: Context) {
                 send(P.videoSupport()); send(P.whitelist())
             }
             "VIDEO_SUP_REQ" -> send(P.videoSupport())
+            "LAND_MODE_REQ" -> {
+                val requested = para?.optInt("Orientation", P.ORIENTATION_LANDSCAPE)
+                    ?: P.ORIENTATION_LANDSCAPE
+
+                // This bridge forwards an Android Auto landscape surface. Tell the
+                // receiver to use the same coordinate space for reverse touch.
+                negotiatedOrientation = P.ORIENTATION_LANDSCAPE
+                send(P.landModeResponse(negotiatedOrientation))
+
+                val phone = realDisplaySize()
+                val mirror = fitMirrorSize(width, height, phone.first, phone.second)
+                touchWidth = phone.first
+                touchHeight = phone.second
+                send(P.control("PHONE_INFO_CHANGE", P.phoneInfoChange(
+                    phone.first, phone.second, mirror.first, mirror.second,
+                    width, height
+                ), 1))
+                AppLog.i("QDLink: LAND_MODE_REQ orientation=$requested -> " +
+                    "LAND_MODE_RSP orientation=$negotiatedOrientation + PHONE_INFO_CHANGE")
+            }
             "VIDEO_ARGS" -> { width = para?.optInt("Width", width) ?: width; height = para?.optInt("Height", height) ?: height; fps = para?.optInt("FrameRate", 30) ?: 30; bitRate = para?.optInt("BitRate", bitRate) ?: bitRate; interval = para?.optInt("FrameInterval", 3) ?: 3 }
             "HEARTBEAT" -> send(P.control("HEARTBEAT", null, 1))
             "VIDEO_CTRL" -> { playing = para?.optInt("PlayStatus", 0) == 1; if (playing) { configSent = false; resendConfig = true; onKeyFrameRequest?.invoke() } }
@@ -298,7 +319,7 @@ class QdLinkBridge(private val context: Context) {
             au,
             encodedWidth.takeIf { it > 0 } ?: width,
             encodedHeight.takeIf { it > 0 } ?: height,
-            fps, bitRate, interval
+            fps, bitRate, interval, negotiatedOrientation
         )
         val declared = P.int(packet, 4)
         if (declared < 48 || declared > packet.size) {
@@ -322,6 +343,8 @@ class QdLinkBridge(private val context: Context) {
 
     private object P {
         const val UDP_IN = 18463; const val UDP_OUT = 18464
+        const val ORIENTATION_PORTRAIT = 1
+        const val ORIENTATION_LANDSCAPE = 2
         private val ctrl = "5A5A".toByteArray(); private val bin = "!BIN".toByteArray()
         fun put(v: Int, b: ByteArray, o: Int) { ByteBuffer.wrap(b, o, 4).order(ByteOrder.BIG_ENDIAN).putInt(v) }
         fun short(v: Int, b: ByteArray, o: Int) { ByteBuffer.wrap(b, o, 2).order(ByteOrder.BIG_ENDIAN).putShort(v.toShort()) }
@@ -334,6 +357,8 @@ class QdLinkBridge(private val context: Context) {
         fun whitelist():ByteArray { val body=JSONObject().put("AppID","Mirror").put("FunctionID","WhitelistAppOn").put("Para",JSONObject().put("WhitelistAppOn",1)).toString().toByteArray();val h=ByteArray(16);ctrl.copyInto(h);put(16+body.size,h,4);h[10]=13;h[13]=1;return h+body }
         fun videoSupport()=control("VIDEO_SUP_RSP",JSONObject().put("VideoFormat",3).put("VideoSupport",1),1)
         fun phoneInfo(phoneW:Int,phoneH:Int,mirrorW:Int,mirrorH:Int,carW:Int,carH:Int,mt:Int)=JSONObject().put("PhoneName",Build.MODEL).put("PhoneUUID",Build.FINGERPRINT.take(16)).put("PhoneBrand",Build.MANUFACTURER).put("PhoneModel",Build.MODEL).put("Version",BuildConfig.VERSION_NAME).put("Platform",0).put("PlatformVersion",Build.VERSION.SDK_INT.toString()).put("PhoneWidth",phoneW).put("PhoneHeight",phoneH).put("MirrorWidth",mirrorW).put("MirrorHeight",mirrorH).put("PhoneWidthInApp",carW).put("PhoneHeightInApp",carH).put("MirrorWidthInApp",carW).put("MirrorHeightInApp",carH).put("MirrorTypeSupport",mt).put("PhoneSystemTime",System.currentTimeMillis()).put("PhoneFeature",JSONObject().put("PassistMobileNum",""))
-        fun video(au:ByteArray,w:Int,h:Int,fps:Int,br:Int,fi:Int):ByteArray { val d=ByteArray(32);short(32,d,0);d[2]=1;put(w,d,4);put(h,d,8);d[15]=3;put(fps,d,16);put(br,d,20);put(fi,d,24);d[28]=2;val a=ByteArray(16);ctrl.copyInto(a);put(48+au.size,a,4);short(32,a,8);a[10]=1;a[13]=2;return a+d+au }
+        fun phoneInfoChange(phoneW:Int,phoneH:Int,mirrorW:Int,mirrorH:Int,carW:Int,carH:Int)=JSONObject().put("PhoneWidth",phoneW).put("PhoneHeight",phoneH).put("MirrorWidth",mirrorW).put("MirrorHeight",mirrorH).put("PhoneWidthInApp",carW).put("PhoneHeightInApp",carH).put("MirrorWidthInApp",carW).put("MirrorHeightInApp",carH)
+        fun landModeResponse(orientation:Int)=control("LAND_MODE_RSP",JSONObject().put("Orientation",orientation).put("Authority",1).put("StatusArg",1),1)
+        fun video(au:ByteArray,w:Int,h:Int,fps:Int,br:Int,fi:Int,orientation:Int):ByteArray { val d=ByteArray(32);short(32,d,0);d[2]=1;put(w,d,4);put(h,d,8);short(0,d,12);d[14]=orientation.toByte();d[15]=3;put(fps,d,16);put(br,d,20);put(fi,d,24);d[28]=2;val a=ByteArray(16);ctrl.copyInto(a);put(48+au.size,a,4);short(32,a,8);a[10]=1;a[13]=2;return a+d+au }
     }
 }

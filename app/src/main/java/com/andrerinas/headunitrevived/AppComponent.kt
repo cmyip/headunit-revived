@@ -21,5 +21,5 @@ class AppComponent(private val app: App) {
         get() = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
     val commManager = CommManager(app, settings, audioDecoder, videoDecoder)
-    val qdLinkBridge = QdLinkBridge()
+    val qdLinkBridge = QdLinkBridge(app)
 }

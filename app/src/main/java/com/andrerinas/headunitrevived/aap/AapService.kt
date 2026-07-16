@@ -673,25 +673,30 @@ class AapService : Service(), UsbReceiver.Listener {
             return
         }
         val qdLink = App.provide(this).qdLinkBridge
+        // Always install the reverse-input handler. AapVideo can start QDLink
+        // dynamically after the service was created (for example when the user
+        // changes the output mode from LOCAL to QDLINK). Keeping this callback
+        // behind the initial mode check made video work in that case while all
+        // touch frames were silently dropped because QdLinkBridge.onTouch was null.
+        qdLink.onTouch = { touch ->
+            val aaWidth = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedWidth().coerceAtLeast(1)
+            val aaHeight = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedHeight().coerceAtLeast(1)
+            val x = (touch.x * aaWidth / qdLink.touchWidth.coerceAtLeast(1)).toInt().coerceIn(0, aaWidth - 1)
+            val y = (touch.y * aaHeight / qdLink.touchHeight.coerceAtLeast(1)).toInt().coerceIn(0, aaHeight - 1)
+            val action = when (touch.action) {
+                0 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_DOWN
+                2 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_MOVE
+                else -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_UP
+            }
+            commManager.send(com.andrerinas.headunitrevived.aap.protocol.messages.TouchEvent(
+                android.os.SystemClock.elapsedRealtime(), action, x, y))
+        }
         if (settings.videoOutputMode != Settings.VideoOutputMode.LOCAL) {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             qdLinkWakeLock = powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK, "$packageName:qdlink-stream").apply {
                 setReferenceCounted(false)
                 acquire()
-            }
-            qdLink.onTouch = { touch ->
-                val aaWidth = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedWidth().coerceAtLeast(1)
-                val aaHeight = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedHeight().coerceAtLeast(1)
-                val x = (touch.x * aaWidth / qdLink.width.coerceAtLeast(1)).toInt().coerceIn(0, aaWidth - 1)
-                val y = (touch.y * aaHeight / qdLink.height.coerceAtLeast(1)).toInt().coerceIn(0, aaHeight - 1)
-                val action = when (touch.action) {
-                    0 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_DOWN
-                    2 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_MOVE
-                    else -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_UP
-                }
-                commManager.send(com.andrerinas.headunitrevived.aap.protocol.messages.TouchEvent(
-                    android.os.SystemClock.elapsedRealtime(), action, x, y))
             }
             qdLink.start()
         }

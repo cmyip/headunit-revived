@@ -1,6 +1,9 @@
 package com.andrerinas.headunitrevived.qdlink
 
+import android.content.Context
+import android.graphics.Point
 import android.os.Build
+import android.view.WindowManager
 import com.andrerinas.headunitrevived.BuildConfig
 import com.andrerinas.headunitrevived.utils.AppLog
 import org.json.JSONObject
@@ -13,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class QdTouch(val x: Float, val y: Float, val action: Int)
 
 /** Phone-side QDLink/SSP endpoint. Android Auto access units are passed through unchanged. */
-class QdLinkBridge {
+class QdLinkBridge(private val context: Context) {
     private val running = AtomicBoolean(false)
     private val writeLock = Any()
     @Volatile private var out: OutputStream? = null
@@ -21,6 +24,8 @@ class QdLinkBridge {
     @Volatile private var port = 0
     @Volatile var width = 1920; private set
     @Volatile var height = 882; private set
+    @Volatile var touchWidth = 1920; private set
+    @Volatile var touchHeight = 882; private set
     @Volatile private var encodedWidth = 0
     @Volatile private var encodedHeight = 0
     @Volatile private var fps = 30
@@ -240,7 +245,15 @@ class QdLinkBridge {
             "CAR_INFO" -> {
                 width = para?.optInt("CarWidth", 1920)?.takeIf { it > 0 } ?: 1920
                 height = para?.optInt("CarHeight", 882)?.takeIf { it > 0 } ?: 882
-                send(P.control("PHONE_INFO", P.phoneInfo(width, height, para?.optInt("MirrorTypeReq", 0) ?: 0), 1))
+                val phone = realDisplaySize()
+                val mirror = fitMirrorSize(width, height, phone.first, phone.second)
+                touchWidth = phone.first
+                touchHeight = phone.second
+                AppLog.i("QDLink: phone=${phone.first}x${phone.second} mirror=${mirror.first}x${mirror.second} car=${width}x${height}")
+                send(P.control("PHONE_INFO", P.phoneInfo(
+                    phone.first, phone.second, mirror.first, mirror.second,
+                    width, height, para?.optInt("MirrorTypeReq", 0) ?: 0
+                ), 1))
                 send(P.videoSupport()); send(P.whitelist())
             }
             "VIDEO_SUP_REQ" -> send(P.videoSupport())
@@ -256,6 +269,27 @@ class QdLinkBridge {
         if (b.size < 15) return
         val flag = P.int(b, 0); val action = when (flag) { 0 -> 0; 2 -> 2; 1 -> 1; else -> return }
         onTouch?.invoke(QdTouch(P.float(b, 7), P.float(b, 11), action))
+    }
+
+    private fun realDisplaySize(): Pair<Int, Int> {
+        val point = Point()
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealSize(point)
+        return maxOf(point.x, point.y).coerceAtLeast(1) to
+            minOf(point.x, point.y).coerceAtLeast(1)
+    }
+
+    private fun fitMirrorSize(carWidth: Int, carHeight: Int, phoneWidth: Int, phoneHeight: Int): Pair<Int, Int> {
+        val carAspect = carWidth.toDouble() / carHeight
+        val phoneAspect = phoneWidth.toDouble() / phoneHeight
+        val raw = if (carAspect > phoneAspect) {
+            (carHeight * phoneAspect).toInt() to carHeight
+        } else {
+            carWidth to (carWidth / phoneAspect).toInt()
+        }
+        fun even(value: Int) = ((value + 1) and -2).coerceAtLeast(2)
+        return even(raw.first) to even(raw.second)
     }
 
     private var videoWireCount = 0L
@@ -299,7 +333,7 @@ class QdLinkBridge {
         fun control(cmd:String, para:JSONObject?=null, flag:Int=0):ByteArray { val j=JSONObject().put("CMD",cmd); if(para!=null)j.put("PARA",para); val body=j.toString().toByteArray(); val h=ByteArray(16);ctrl.copyInto(h);put(16+body.size,h,4);h[13]=flag.toByte();return h+body }
         fun whitelist():ByteArray { val body=JSONObject().put("AppID","Mirror").put("FunctionID","WhitelistAppOn").put("Para",JSONObject().put("WhitelistAppOn",1)).toString().toByteArray();val h=ByteArray(16);ctrl.copyInto(h);put(16+body.size,h,4);h[10]=13;h[13]=1;return h+body }
         fun videoSupport()=control("VIDEO_SUP_RSP",JSONObject().put("VideoFormat",3).put("VideoSupport",1),1)
-        fun phoneInfo(w:Int,h:Int,mt:Int)=JSONObject().put("PhoneName",Build.MODEL).put("PhoneUUID",Build.FINGERPRINT.take(16)).put("PhoneBrand",Build.MANUFACTURER).put("PhoneModel",Build.MODEL).put("Version",BuildConfig.VERSION_NAME).put("Platform",0).put("PlatformVersion",Build.VERSION.SDK_INT.toString()).put("PhoneWidth",w).put("PhoneHeight",h).put("MirrorWidth",w).put("MirrorHeight",h).put("PhoneWidthInApp",w).put("PhoneHeightInApp",h).put("MirrorWidthInApp",w).put("MirrorHeightInApp",h).put("MirrorTypeSupport",mt).put("PhoneSystemTime",System.currentTimeMillis()).put("PhoneFeature",JSONObject().put("PassistMobileNum",""))
+        fun phoneInfo(phoneW:Int,phoneH:Int,mirrorW:Int,mirrorH:Int,carW:Int,carH:Int,mt:Int)=JSONObject().put("PhoneName",Build.MODEL).put("PhoneUUID",Build.FINGERPRINT.take(16)).put("PhoneBrand",Build.MANUFACTURER).put("PhoneModel",Build.MODEL).put("Version",BuildConfig.VERSION_NAME).put("Platform",0).put("PlatformVersion",Build.VERSION.SDK_INT.toString()).put("PhoneWidth",phoneW).put("PhoneHeight",phoneH).put("MirrorWidth",mirrorW).put("MirrorHeight",mirrorH).put("PhoneWidthInApp",carW).put("PhoneHeightInApp",carH).put("MirrorWidthInApp",carW).put("MirrorHeightInApp",carH).put("MirrorTypeSupport",mt).put("PhoneSystemTime",System.currentTimeMillis()).put("PhoneFeature",JSONObject().put("PassistMobileNum",""))
         fun video(au:ByteArray,w:Int,h:Int,fps:Int,br:Int,fi:Int):ByteArray { val d=ByteArray(32);short(32,d,0);d[2]=1;put(w,d,4);put(h,d,8);d[15]=3;put(fps,d,16);put(br,d,20);put(fi,d,24);d[28]=2;val a=ByteArray(16);ctrl.copyInto(a);put(48+au.size,a,4);short(32,a,8);a[10]=1;a[13]=2;return a+d+au }
     }
 }

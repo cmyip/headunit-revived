@@ -350,6 +350,11 @@ class Settings(private val context: Context) {
         } catch (_: IllegalArgumentException) { VideoOutputMode.LOCAL }
         set(value) { prefs.edit().putString("video-output-mode", value.name).apply() }
 
+    /** Negotiate a standard AA frame with margins matching the QDLink canvas. */
+    var qdLinkActiveAreaMargins: Boolean
+        get() = prefs.getBoolean("qdlink-active-area-margins", false)
+        set(value) { prefs.edit().putBoolean("qdlink-active-area-margins", value).apply() }
+
     var fpsLimit: Int
         get() = prefs.getInt("fps-limit", 60)
         set(value) { prefs.edit().putInt("fps-limit", value).apply() }

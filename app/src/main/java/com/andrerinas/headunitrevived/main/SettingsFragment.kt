@@ -69,6 +69,7 @@ class SettingsFragment : Fragment() {
     private var pendingSoftwareVideoDecoder: Settings.SoftwareVideoDecoder? = null
     private var pendingVideoCodec: String? = null
     private var pendingVideoOutputMode: Settings.VideoOutputMode? = null
+    private var pendingQdLinkActiveAreaMargins: Boolean? = null
     private var pendingFpsLimit: Int? = null
     private var pendingBluetoothAddress: String? = null
     private var pendingEnableAudioSink: Boolean? = null
@@ -171,6 +172,7 @@ class SettingsFragment : Fragment() {
         pendingSoftwareVideoDecoder = settings.softwareVideoDecoder
         pendingVideoCodec = settings.videoCodec
         pendingVideoOutputMode = settings.videoOutputMode
+        pendingQdLinkActiveAreaMargins = settings.qdLinkActiveAreaMargins
         pendingFpsLimit = settings.fpsLimit
         pendingBluetoothAddress = settings.bluetoothAddress
         pendingEnableAudioSink = settings.enableAudioSink
@@ -256,6 +258,7 @@ class SettingsFragment : Fragment() {
         pendingSoftwareVideoDecoder = settings.softwareVideoDecoder
         pendingVideoCodec = settings.videoCodec
         pendingVideoOutputMode = settings.videoOutputMode
+        pendingQdLinkActiveAreaMargins = settings.qdLinkActiveAreaMargins
         pendingFpsLimit = settings.fpsLimit
         pendingBluetoothAddress = settings.bluetoothAddress
         pendingEnableAudioSink = settings.enableAudioSink
@@ -365,6 +368,7 @@ class SettingsFragment : Fragment() {
         pendingSoftwareVideoDecoder?.let { settings.softwareVideoDecoder = it }
         pendingVideoCodec?.let { settings.videoCodec = it }
         pendingVideoOutputMode?.let { settings.videoOutputMode = it }
+        pendingQdLinkActiveAreaMargins?.let { settings.qdLinkActiveAreaMargins = it }
         pendingFpsLimit?.let { settings.fpsLimit = it }
         pendingBluetoothAddress?.let { settings.bluetoothAddress = it }
         pendingEnableAudioSink?.let { settings.enableAudioSink = it }
@@ -459,6 +463,7 @@ class SettingsFragment : Fragment() {
                         pendingSoftwareVideoDecoder != settings.softwareVideoDecoder ||
                         pendingVideoCodec != settings.videoCodec ||
                         pendingVideoOutputMode != settings.videoOutputMode ||
+                        pendingQdLinkActiveAreaMargins != settings.qdLinkActiveAreaMargins ||
                         pendingFpsLimit != settings.fpsLimit ||
                         pendingBluetoothAddress != settings.bluetoothAddress ||
                         pendingEnableAudioSink != settings.enableAudioSink ||
@@ -497,6 +502,7 @@ class SettingsFragment : Fragment() {
         requiresRestart = pendingResolution != settings.resolutionId ||
                           pendingVideoCodec != settings.videoCodec ||
                           pendingVideoOutputMode != settings.videoOutputMode ||
+                          pendingQdLinkActiveAreaMargins != settings.qdLinkActiveAreaMargins ||
                           pendingFpsLimit != settings.fpsLimit ||
                             pendingDpi != settings.dpiPixelDensity ||
             pendingStaticBSSID != settings.staticBSSID ||
@@ -1165,6 +1171,21 @@ class SettingsFragment : Fragment() {
                     }.show()
             }
         ))
+
+        if (pendingVideoOutputMode != Settings.VideoOutputMode.LOCAL) {
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "qdLinkActiveAreaMargins",
+                nameResId = R.string.qdlink_active_area_margins,
+                descriptionResId = R.string.qdlink_active_area_margins_summary,
+                isChecked = pendingQdLinkActiveAreaMargins == true,
+                onCheckedChanged = { isChecked ->
+                    pendingQdLinkActiveAreaMargins = isChecked
+                    requiresRestart = true
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+        }
 
         items.add(SettingItem.SettingEntry(
             stableId = "fpsLimit",

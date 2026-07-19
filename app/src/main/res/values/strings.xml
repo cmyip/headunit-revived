@@ -246,6 +246,8 @@
     <string name="auto_connecting_single_usb">Auto-connecting to USB device…</string>
     <string name="video_codec">Video Codec</string>
     <string name="video_output_mode">Video Output</string>
+    <string name="qdlink_active_area_margins">Match Android Auto area to QDLink</string>
+    <string name="qdlink_active_area_margins_summary">Use Android Auto margins so its active UI and touch area match the QDLink canvas. Requires reconnecting.</string>
     <string name="fps_limit">FPS Limit</string>
     <string name="save">Save</string>
     <string name="save_and_restart">Save (Reconnect needed)</string>

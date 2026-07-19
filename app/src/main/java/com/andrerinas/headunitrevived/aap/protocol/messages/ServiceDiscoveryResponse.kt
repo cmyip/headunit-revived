@@ -22,6 +22,19 @@ class ServiceDiscoveryResponse(private val context: Context)
             val settings = App.provide(context).settings
             // Initialize HeadUnitScreenConfig with actual physical screen dimensions
             HeadUnitScreenConfig.init(context, context.resources.displayMetrics, settings)
+            val qdLinkMode = settings.videoOutputMode !=
+                com.andrerinas.headunitrevived.utils.Settings.VideoOutputMode.LOCAL
+            val qdLinkMarginMode = qdLinkMode && settings.qdLinkActiveAreaMargins
+            val qdLink = App.provide(context).qdLinkBridge
+
+            // QDLink commonly exposes a 1920x882 canvas. Android Auto cannot
+            // encode that non-standard size, so request a standard 1080p frame
+            // and describe the unused portion as margins. This keeps the active
+            // AA UI the same size as the QDLink video/touch canvas.
+            if (qdLinkMarginMode) {
+                HeadUnitScreenConfig.negotiatedResolutionType =
+                    Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._1920x1080
+            }
 
             val services = mutableListOf<Control.Service>()
 
@@ -85,8 +98,12 @@ class ServiceDiscoveryResponse(private val context: Context)
 
                     // Use HeadUnitScreenConfig for negotiated resolution and margins
                     val negotiatedResolution = HeadUnitScreenConfig.negotiatedResolutionType
-                    val phoneWidthMargin = HeadUnitScreenConfig.getWidthMargin()
-                    val phoneHeightMargin = HeadUnitScreenConfig.getHeightMargin()
+                    val phoneWidthMargin = if (qdLinkMarginMode) {
+                        (HeadUnitScreenConfig.getNegotiatedWidth() - qdLink.width).coerceAtLeast(0)
+                    } else HeadUnitScreenConfig.getWidthMargin()
+                    val phoneHeightMargin = if (qdLinkMarginMode) {
+                        (HeadUnitScreenConfig.getNegotiatedHeight() - qdLink.height).coerceAtLeast(0)
+                    } else HeadUnitScreenConfig.getHeightMargin()
 
                     // Enforce H.265 for 1440p resolution as required by Android Auto.
                     // Software HEVC is allowed only when the user explicitly selected it.

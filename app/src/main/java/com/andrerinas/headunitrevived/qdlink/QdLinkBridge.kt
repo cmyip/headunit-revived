@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Point
 import android.os.Build
 import android.view.WindowManager
+import com.andrerinas.headunitrevived.App
 import com.andrerinas.headunitrevived.BuildConfig
 import com.andrerinas.headunitrevived.utils.AppLog
 import org.json.JSONObject
@@ -246,7 +247,12 @@ class QdLinkBridge(private val context: Context) {
             "CAR_INFO" -> {
                 width = para?.optInt("CarWidth", 1920)?.takeIf { it > 0 } ?: 1920
                 height = para?.optInt("CarHeight", 882)?.takeIf { it > 0 } ?: 882
-                val phone = realDisplaySize()
+                // This bridge represents the forwarded AA surface, not the
+                // physical Android display running headunit-revived. Advertise
+                // the QDLink canvas so returned touch uses that same space.
+                val phone = if (App.provide(context).settings.qdLinkActiveAreaMargins) {
+                    width to height
+                } else realDisplaySize()
                 val mirror = fitMirrorSize(width, height, phone.first, phone.second)
                 touchWidth = phone.first
                 touchHeight = phone.second
@@ -267,7 +273,9 @@ class QdLinkBridge(private val context: Context) {
                 negotiatedOrientation = P.ORIENTATION_LANDSCAPE
                 send(P.landModeResponse(negotiatedOrientation))
 
-                val phone = realDisplaySize()
+                val phone = if (App.provide(context).settings.qdLinkActiveAreaMargins) {
+                    width to height
+                } else realDisplaySize()
                 val mirror = fitMirrorSize(width, height, phone.first, phone.second)
                 touchWidth = phone.first
                 touchHeight = phone.second
@@ -319,7 +327,7 @@ class QdLinkBridge(private val context: Context) {
             au,
             encodedWidth.takeIf { it > 0 } ?: width,
             encodedHeight.takeIf { it > 0 } ?: height,
-            fps, bitRate, interval, negotiatedOrientation
+            fps, bitRate, interval, negotiatedOrientation, P.ANGLE_LANDSCAPE
         )
         val declared = P.int(packet, 4)
         if (declared < 48 || declared > packet.size) {
@@ -343,8 +351,10 @@ class QdLinkBridge(private val context: Context) {
 
     private object P {
         const val UDP_IN = 18463; const val UDP_OUT = 18464
-        const val ORIENTATION_PORTRAIT = 1
-        const val ORIENTATION_LANDSCAPE = 2
+        // Production h0.d metadata: orls=0 portrait, orls=1 landscape.
+        const val ORIENTATION_PORTRAIT = 0
+        const val ORIENTATION_LANDSCAPE = 1
+        const val ANGLE_LANDSCAPE = 90
         private val ctrl = "5A5A".toByteArray(); private val bin = "!BIN".toByteArray()
         fun put(v: Int, b: ByteArray, o: Int) { ByteBuffer.wrap(b, o, 4).order(ByteOrder.BIG_ENDIAN).putInt(v) }
         fun short(v: Int, b: ByteArray, o: Int) { ByteBuffer.wrap(b, o, 2).order(ByteOrder.BIG_ENDIAN).putShort(v.toShort()) }
@@ -359,6 +369,15 @@ class QdLinkBridge(private val context: Context) {
         fun phoneInfo(phoneW:Int,phoneH:Int,mirrorW:Int,mirrorH:Int,carW:Int,carH:Int,mt:Int)=JSONObject().put("PhoneName",Build.MODEL).put("PhoneUUID",Build.FINGERPRINT.take(16)).put("PhoneBrand",Build.MANUFACTURER).put("PhoneModel",Build.MODEL).put("Version",BuildConfig.VERSION_NAME).put("Platform",0).put("PlatformVersion",Build.VERSION.SDK_INT.toString()).put("PhoneWidth",phoneW).put("PhoneHeight",phoneH).put("MirrorWidth",mirrorW).put("MirrorHeight",mirrorH).put("PhoneWidthInApp",carW).put("PhoneHeightInApp",carH).put("MirrorWidthInApp",carW).put("MirrorHeightInApp",carH).put("MirrorTypeSupport",mt).put("PhoneSystemTime",System.currentTimeMillis()).put("PhoneFeature",JSONObject().put("PassistMobileNum",""))
         fun phoneInfoChange(phoneW:Int,phoneH:Int,mirrorW:Int,mirrorH:Int,carW:Int,carH:Int)=JSONObject().put("PhoneWidth",phoneW).put("PhoneHeight",phoneH).put("MirrorWidth",mirrorW).put("MirrorHeight",mirrorH).put("PhoneWidthInApp",carW).put("PhoneHeightInApp",carH).put("MirrorWidthInApp",carW).put("MirrorHeightInApp",carH)
         fun landModeResponse(orientation:Int)=control("LAND_MODE_RSP",JSONObject().put("Orientation",orientation).put("Authority",1).put("StatusArg",1),1)
-        fun video(au:ByteArray,w:Int,h:Int,fps:Int,br:Int,fi:Int,orientation:Int):ByteArray { val d=ByteArray(32);short(32,d,0);d[2]=1;put(w,d,4);put(h,d,8);short(0,d,12);d[14]=orientation.toByte();d[15]=3;put(fps,d,16);put(br,d,20);put(fi,d,24);d[28]=2;val a=ByteArray(16);ctrl.copyInto(a);put(48+au.size,a,4);short(32,a,8);a[10]=1;a[13]=2;return a+d+au }
+        fun video(au:ByteArray,w:Int,h:Int,fps:Int,br:Int,fi:Int,orientation:Int,angle:Int):ByteArray {
+            require(angle == 0 || angle == 90 || angle == 180 || angle == 270) {
+                "angle must be 0, 90, 180, or 270"
+            }
+            val d=ByteArray(32);short(32,d,0);d[2]=1;put(w,d,4);put(h,d,8)
+            short(angle,d,12);d[14]=orientation.toByte();d[15]=3
+            put(fps,d,16);put(br,d,20);put(fi,d,24);d[28]=2
+            val a=ByteArray(16);ctrl.copyInto(a);put(48+au.size,a,4);short(32,a,8);a[10]=1;a[13]=2
+            return a+d+au
+        }
     }
 }

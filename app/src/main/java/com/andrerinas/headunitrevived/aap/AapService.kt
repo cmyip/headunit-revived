@@ -681,8 +681,14 @@ class AapService : Service(), UsbReceiver.Listener {
         qdLink.onTouch = { touch ->
             val aaWidth = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedWidth().coerceAtLeast(1)
             val aaHeight = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedHeight().coerceAtLeast(1)
-            val x = (touch.x * aaWidth / qdLink.touchWidth.coerceAtLeast(1)).toInt().coerceIn(0, aaWidth - 1)
-            val y = (touch.y * aaHeight / qdLink.touchHeight.coerceAtLeast(1)).toInt().coerceIn(0, aaHeight - 1)
+            // In QDLink mode AA is negotiated as a standard encoded frame with
+            // margins. Touch targets the active UI area, which matches the
+            // advertised QDLink canvas, rather than the padded encoded frame.
+            val useActiveArea = settings.qdLinkActiveAreaMargins
+            val activeWidth = if (useActiveArea) minOf(aaWidth, qdLink.width).coerceAtLeast(1) else aaWidth
+            val activeHeight = if (useActiveArea) minOf(aaHeight, qdLink.height).coerceAtLeast(1) else aaHeight
+            val x = (touch.x * activeWidth / qdLink.touchWidth.coerceAtLeast(1)).toInt().coerceIn(0, activeWidth - 1)
+            val y = (touch.y * activeHeight / qdLink.touchHeight.coerceAtLeast(1)).toInt().coerceIn(0, activeHeight - 1)
             val action = when (touch.action) {
                 0 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_DOWN
                 2 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_MOVE

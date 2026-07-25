@@ -211,6 +211,7 @@ class AapService : Service(), UsbReceiver.Listener {
      * service harder for MediaTek's background power saving to kill.
      */
     private var bootWakeLock: PowerManager.WakeLock? = null
+    private var qdLinkWakeLock: PowerManager.WakeLock? = null
 
     /**
      * Runtime-registered receiver for MEDIA_BUTTON intents.
@@ -671,6 +672,40 @@ class AapService : Service(), UsbReceiver.Listener {
             AppLog.e("ForegroundServiceStartNotAllowedException/Exception caught in onCreate: ${e.message}", e)
             stopSelf()
             return
+        }
+        val qdLink = App.provide(this).qdLinkBridge
+        // Always install the reverse-input handler. AapVideo can start QDLink
+        // dynamically after the service was created (for example when the user
+        // changes the output mode from LOCAL to QDLINK). Keeping this callback
+        // behind the initial mode check made video work in that case while all
+        // touch frames were silently dropped because QdLinkBridge.onTouch was null.
+        qdLink.onTouch = { touch ->
+            val aaWidth = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedWidth().coerceAtLeast(1)
+            val aaHeight = com.andrerinas.headunitrevived.utils.HeadUnitScreenConfig.getNegotiatedHeight().coerceAtLeast(1)
+            // In QDLink mode AA is negotiated as a standard encoded frame with
+            // margins. Touch targets the active UI area, which matches the
+            // advertised QDLink canvas, rather than the padded encoded frame.
+            val useActiveArea = settings.qdLinkActiveAreaMargins
+            val activeWidth = if (useActiveArea) minOf(aaWidth, qdLink.width).coerceAtLeast(1) else aaWidth
+            val activeHeight = if (useActiveArea) minOf(aaHeight, qdLink.height).coerceAtLeast(1) else aaHeight
+            val x = (touch.x * activeWidth / qdLink.touchWidth.coerceAtLeast(1)).toInt().coerceIn(0, activeWidth - 1)
+            val y = (touch.y * activeHeight / qdLink.touchHeight.coerceAtLeast(1)).toInt().coerceIn(0, activeHeight - 1)
+            val action = when (touch.action) {
+                0 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_DOWN
+                2 -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_MOVE
+                else -> com.andrerinas.headunitrevived.aap.protocol.proto.Input.TouchEvent.PointerAction.TOUCH_ACTION_UP
+            }
+            commManager.send(com.andrerinas.headunitrevived.aap.protocol.messages.TouchEvent(
+                android.os.SystemClock.elapsedRealtime(), action, x, y))
+        }
+        if (settings.videoOutputMode != Settings.VideoOutputMode.LOCAL) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            qdLinkWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "$packageName:qdlink-stream").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            qdLink.start()
         }
         setupCarMode()
         setupNightMode()
@@ -1547,6 +1582,9 @@ class AapService : Service(), UsbReceiver.Listener {
         settingsPrefs?.unregisterOnSharedPreferenceChangeListener(settingsPreferenceListener)
         settingsPrefs = null
         nativeAaHandshakeManager?.stop()
+        App.provide(this).qdLinkBridge.stop()
+        if (qdLinkWakeLock?.isHeld == true) qdLinkWakeLock?.release()
+        qdLinkWakeLock = null
         releaseBootWakeLock()
 
         if (App.provide(this).settings.autoEnableHotspot) {

@@ -9,6 +9,7 @@ import com.andrerinas.headunitrevived.decoder.AudioDecoder
 import com.andrerinas.headunitrevived.decoder.VideoDecoder
 import com.andrerinas.headunitrevived.utils.SUExecutor
 import com.andrerinas.headunitrevived.utils.Settings
+import com.andrerinas.headunitrevived.qdlink.QdLinkBridge
 
 class AppComponent(private val app: App) {
 
@@ -26,4 +27,5 @@ class AppComponent(private val app: App) {
     val suExecutor = SUExecutor()
 
     val carKeysManager = CarKeysManager()
+    val qdLinkBridge = QdLinkBridge(app)
 }

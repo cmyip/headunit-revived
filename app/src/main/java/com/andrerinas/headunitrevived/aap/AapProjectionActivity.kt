@@ -121,6 +121,15 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                     hideLoadingOverlay(loadingOverlay)
                     return
                 }
+                // QDLink-only output never decodes locally, so the decoder stays idle.
+                // Video reaching the head unit counts; asking for focus again here
+                // would restart Android Auto's stream every 1.5 seconds.
+                if (settings.videoOutputMode == Settings.VideoOutputMode.QDLINK &&
+                    App.provide(this@AapProjectionActivity).qdLinkBridge.hasAndroidAutoVideo) {
+                    AppLog.i("Watchdog: Video is being forwarded to QDLink. Hiding overlay.")
+                    hideLoadingOverlay(loadingOverlay)
+                    return
+                }
 
                 AppLog.w("Watchdog: No video received yet. Requesting Keyframe (Unsolicited Focus)...")
                 commManager.send(VideoFocusEvent(gain = true, unsolicited = true))
@@ -134,6 +143,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             if (commManager.connectionState.value !is CommManager.ConnectionState.HandshakeComplete) {
                 return
             }
+            // QDLink-only output has no local frames to time; the head unit shows the picture.
+            if (settings.videoOutputMode == Settings.VideoOutputMode.QDLINK) return
             val lastFrame = videoDecoder.lastFrameRenderedMs
             if (lastFrame == 0L) {
                 // First frame hasn't arrived yet — handled by the starting overlay
@@ -469,6 +480,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         isForeground = true
         AppLog.i("AapProjectionActivity: onResume")
         applyStickyOrientation()
+        applyQdLinkUsbWindowMode()
         watchdogHandler.postDelayed(watchdogRunnable, 2000)
         watchdogHandler.postDelayed(videoWatchdogRunnable, 3000)
         watchdogHandler.postDelayed(reconnectingWatchdog, 5000)
@@ -945,7 +957,89 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
     private val commManager get() = App.provide(this).commManager
 
+    private var headUnitTouchLogged = 0
+
+    /** True while this phone is cabled to a QDLink head unit and video goes to it. */
+    private fun qdLinkUsbActive(): Boolean =
+        settings.videoOutputMode != Settings.VideoOutputMode.LOCAL &&
+            App.provide(this).qdLinkBridge.usbAccessory() != null
+
+    /**
+     * A QDLink head unit on USB delivers touch as a HID touchscreen attached to this
+     * phone (vendor/product ffff:ffff), scaled to the whole phone display. Those
+     * events belong to the picture on the head unit, not to whatever is laid out
+     * on this screen, so map every finger by screen fraction straight into Android
+     * Auto's active area.
+     */
+    private fun forwardHeadUnitTouch(ev: MotionEvent): Boolean {
+        val device = ev.device ?: return false
+        if (device.vendorId != 0xffff || device.productId != 0xffff) return false
+        if (settings.videoOutputMode == Settings.VideoOutputMode.LOCAL) return false
+        val action = TouchEvent.motionEventToAction(ev) ?: return true
+        val bridge = App.provide(this).qdLinkBridge
+
+        val size = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealSize(size)
+        val displayW = size.x.coerceAtLeast(1).toFloat()
+        val displayH = size.y.coerceAtLeast(1).toFloat()
+        // Same active area the Wi-Fi touch path targets: the QDLink canvas inside
+        // the standard frame Android Auto was asked to encode.
+        val aaW = HeadUnitScreenConfig.getNegotiatedWidth().coerceAtLeast(1)
+        val aaH = HeadUnitScreenConfig.getNegotiatedHeight().coerceAtLeast(1)
+        val activeW = if (settings.qdLinkActiveAreaMargins) minOf(aaW, bridge.width).coerceAtLeast(1) else aaW
+        val activeH = if (settings.qdLinkActiveAreaMargins) minOf(aaH, bridge.height).coerceAtLeast(1) else aaH
+        // getX/getY are window-relative; the offset to the screen is the same for every finger.
+        val offsetX = ev.rawX - ev.x
+        val offsetY = ev.rawY - ev.y
+
+        val pointerData = mutableListOf<Triple<Int, Int, Int>>()
+        repeat(ev.pointerCount) { index ->
+            var fx = (ev.getX(index) + offsetX) / displayW
+            var fy = (ev.getY(index) + offsetY) / displayH
+            // The head unit addresses a landscape picture. If this screen is upright,
+            // Android has turned its coordinates with the display; turn them back.
+            if (displayH > displayW) {
+                val px = fx; val py = fy
+                fx = py; fy = 1f - px
+            }
+            val x = (fx * activeW).toInt().coerceIn(0, activeW - 1)
+            val y = (fy * activeH).toInt().coerceIn(0, activeH - 1)
+            pointerData.add(Triple(ev.getPointerId(index), x, y))
+        }
+        if (headUnitTouchLogged++ < 200 && ev.actionMasked != MotionEvent.ACTION_MOVE) AppLog.i(
+            "Head unit touch: $action index=${ev.actionIndex} fingers=${ev.pointerCount} raw=${ev.rawX},${ev.rawY} " +
+                "display=${size.x}x${size.y} -> AA $pointerData of ${activeW}x${activeH} connected=${commManager.isConnected}")
+        commManager.send(TouchEvent(SystemClock.elapsedRealtime(), action, ev.actionIndex, pointerData))
+        return true
+    }
+
+    /**
+     * Head unit touches only reach this activity while the display is on and
+     * this screen is in front, turned the way the head unit expects. So on a
+     * QDLink cable: lie flat in landscape, stay awake, and with nothing to show
+     * locally (QDLink-only output) dim the panel as far as it goes.
+     */
+    private fun applyQdLinkUsbWindowMode() {
+        val active = qdLinkUsbActive()
+        if (active) {
+            if (requestedOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                AppLog.i("QDLink USB: forcing landscape so head unit touches line up")
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        val dim = active && settings.videoOutputMode == Settings.VideoOutputMode.QDLINK
+        val wanted = if (dim) 0.01f else android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (window.attributes.screenBrightness != wanted) {
+            window.attributes = window.attributes.apply { screenBrightness = wanted }
+            AppLog.i("QDLink USB: screen ${if (dim) "dimmed to minimum, kept on for head unit touch" else "brightness restored"}")
+        }
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (forwardHeadUnitTouch(ev)) return true
+
         // 1. 2-finger swipe detection from the left or right edge (to open exit menu or toggle fullscreen)
         if (ev.pointerCount == 2) {
             when (ev.actionMasked) {
@@ -1196,6 +1290,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     }
 
     private fun applyStickyOrientation() {
+        if (qdLinkUsbActive()) return // applyQdLinkUsbWindowMode() owns the orientation
         if (settings.screenOrientation == Settings.ScreenOrientation.AUTO && HeadUnitScreenConfig.isResolutionLocked) {
             val target = if (HeadUnitScreenConfig.getNegotiatedWidth() > HeadUnitScreenConfig.getNegotiatedHeight()) {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -1254,6 +1349,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         }
     }
     private fun applyOrientationSettings() {
+        if (qdLinkUsbActive()) { applyQdLinkUsbWindowMode(); return }
         val screenOrientation = settings.screenOrientation
         if (screenOrientation == Settings.ScreenOrientation.AUTO) {
             applyStickyOrientation()

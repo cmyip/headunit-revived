@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android Open Accessory identity sent by QDLink head units. The version
+         is left out on purpose: head units send "1" or "1.0" depending on
+         firmware, and Android compares a declared version with String.equals. -->
+    <usb-accessory
+        manufacturer="Neusoft"
+        model="QDriveLink" />
+</resources>

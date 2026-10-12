@@ -1088,6 +1088,7 @@ class AapService : Service(), UsbReceiver.Listener {
      */
     private fun onDisconnected(state: CommManager.ConnectionState.Disconnected) {
         isSwitchingToAccessory.set(false)
+        App.provide(this).qdLinkBridge.androidAutoStopped()
         releaseWifiLock()
 
         // Stop GpsLocationService and NightModeManager sensor tracking
@@ -1689,6 +1690,15 @@ class AapService : Service(), UsbReceiver.Listener {
         }
 
         when (intent?.action) {
+            ACTION_QDLINK_USB            -> {
+                // The head unit drops the cable link within seconds, so bring the
+                // bridge up now even if no video has been forwarded yet.
+                AppLog.i("QDLink USB requested; output=${settings.videoOutputMode} aaConnected=${commManager.isConnected}")
+                App.provide(this).qdLinkBridge.apply { start(); connectUsb() }
+                if (settings.videoOutputMode == Settings.VideoOutputMode.LOCAL) {
+                    AppLog.w("QDLink USB attached but video output is Local; nothing will be forwarded")
+                }
+            }
             ACTION_START_SELF_MODE       -> startSelfMode()
             ACTION_START_WIRELESS        -> initWifiMode()
             ACTION_START_WIRELESS_SCAN   -> {
@@ -2392,6 +2402,17 @@ class AapService : Service(), UsbReceiver.Listener {
         startWirelessServer()
 
         serviceScope.launch(Dispatchers.Main) {
+            // Recent Android Auto releases no longer let other apps start wireless
+            // projection. If its developer "head unit server" is running on this
+            // phone, connect to that instead; it needs no trigger from our side.
+            val localServer = withContext(Dispatchers.IO) { openLocalHeadUnitServer() }
+            if (localServer != null) {
+                AppLog.i("Self mode: Android Auto head unit server found on 127.0.0.1:$LOCAL_HEAD_UNIT_SERVER_PORT, connecting to it")
+                commManager.connect(localServer)
+                return@launch
+            }
+            AppLog.i("Self mode: no Android Auto head unit server on 127.0.0.1:$LOCAL_HEAD_UNIT_SERVER_PORT, trying wireless startup")
+
             val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && connectivityManager.activeNetwork == null) {
                 // Wait up to 1 second for the Dummy VPN to become the active network
@@ -2445,6 +2466,9 @@ class AapService : Service(), UsbReceiver.Listener {
                         }
                         sendBroadcast(receiverIntent)
                         AppLog.i("Broadcast fallback sent successfully.")
+                        // The broadcast is silently ignored where Android Auto ships its
+                        // receiver disabled, so say what does still work.
+                        ToastUtils.showToast(this@AapService, getString(R.string.self_mode_start_head_unit_server), Toast.LENGTH_LONG)
                     }
                 } catch (e2: Exception) {
                     AppLog.e("Both Activity and Broadcast triggers failed", e2)
@@ -2453,6 +2477,13 @@ class AapService : Service(), UsbReceiver.Listener {
             }
         }
     }
+
+    /** Connects to Android Auto's developer head unit server on this phone, if it is running. */
+    private fun openLocalHeadUnitServer(): java.net.Socket? = try {
+        java.net.Socket().apply {
+            connect(java.net.InetSocketAddress("127.0.0.1", LOCAL_HEAD_UNIT_SERVER_PORT), 500)
+        }
+    } catch (e: Exception) { null }
 
     /** Reflectively constructs an `android.net.Network` from a raw network ID integer. */
     private fun createFakeNetwork(netId: Int): Parcelable? {
@@ -2631,6 +2662,9 @@ class AapService : Service(), UsbReceiver.Listener {
         const val ACTION_NATIVE_AA_POKE            = "com.andrerinas.headunitrevived.ACTION_NATIVE_AA_POKE"
         const val ACTION_NEARBY_CONNECT             = "com.andrerinas.headunitrevived.ACTION_NEARBY_CONNECT"
         const val ACTION_CHECK_USB                 = "com.andrerinas.headunitrevived.ACTION_CHECK_USB"
+        const val ACTION_QDLINK_USB                = "com.andrerinas.headunitrevived.ACTION_QDLINK_USB"
+        /** Port of the "head unit server" in Android Auto's developer settings. */
+        private const val LOCAL_HEAD_UNIT_SERVER_PORT = 5277
         const val ACTION_STOP_SERVICE              = "com.andrerinas.headunitrevived.aap.action.STOP_SERVICE"
         const val ACTION_DISCONNECT                = "com.andrerinas.headunitrevived.ACTION_DISCONNECT"
         const val ACTION_REQUEST_NIGHT_MODE_UPDATE = "com.andrerinas.headunitrevived.aap.action.REQUEST_NIGHT_MODE_UPDATE"

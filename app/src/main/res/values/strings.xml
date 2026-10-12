@@ -250,6 +250,11 @@
     <string name="auto_connecting_single_usb">Auto-connecting to USB device…</string>
     <string name="video_codec">Video Codec</string>
     <string name="video_output_mode">Video Output</string>
+    <string name="qdlink_usb_head_unit">QDLink head unit (%1$s)</string>
+    <string name="qdlink_usb_connect">Connect</string>
+    <string name="qdlink_waiting_for_video">Waiting for Android Auto…</string>
+    <string name="qdlink_usb_connecting">Connecting to QDLink head unit…</string>
+    <string name="qdlink_usb_needs_output">Set Video output to QDLink in Settings, or nothing is sent to the head unit.</string>
     <string name="qdlink_active_area_margins">Match Android Auto area to QDLink</string>
     <string name="qdlink_active_area_margins_summary">Use Android Auto margins so its active UI and touch area match the QDLink canvas. Requires reconnecting.</string>
     <string name="fps_limit">FPS Limit</string>
@@ -384,6 +389,7 @@
     <string name="success">Success</string>
     <string name="failed">Failed</string>
     <string name="failed_start_android_auto">Failed to start Android Auto</string>
+    <string name="self_mode_start_head_unit_server">If Android Auto does not open, start \"Head unit server\" in Android Auto\'s developer settings, then tap Self Mode again.</string>
     <string name="failed_self_mode_android10">Self-mode is likely blocked by Google on Android 10 (AA 16.4+).</string>
     <string name="android_auto_starting">Android Auto is starting…</string>
     <string name="connection_interrupted">Connection lost</string>

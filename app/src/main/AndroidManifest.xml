@@ -10,6 +10,9 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
     <uses-feature
+        android:name="android.hardware.usb.accessory"
+        android:required="false" />
+    <uses-feature
         android:name="android.hardware.screen.landscape"
         android:required="false" />
     <uses-feature
@@ -102,6 +105,19 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
+
+        <activity
+            android:name=".app.QdLinkAccessoryActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/AppTheme.Translucent">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/qdlink_accessory_filter" />
+        </activity>
 
         <activity
             android:name=".main.MainActivity"
